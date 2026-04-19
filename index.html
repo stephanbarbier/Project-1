@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #333;
+        }
+        
+        #video {
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            border-radius: 8px;
+            background-color: #000;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 5px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #photo {
+            margin-top: 20px;
+            max-width: 100%;
+            border-radius: 8px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Camera App</h1>
+        
+        <div id="errorMessage" class="error hidden"></div>
+        
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        
+        <div class="controls">
+            <button id="startButton">Start Camera</button>
+            <button id="captureButton" disabled>Capture Photo</button>
+            <button id="resetButton" class="hidden">Take Another</button>
+        </div>
+        
+        <img id="photo" alt="Captured photo will appear here" class="hidden">
+    </div>
+
+    <script>
+        // DOM elements
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const photo = document.getElementById('photo');
+        const startButton = document.getElementById('startButton');
+        const captureButton = document.getElementById('captureButton');
+        const resetButton = document.getElementById('resetButton');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        let stream = null;
+        
+        // Start camera
+        startButton.addEventListener('click', async () => {
+            try {
+                errorMessage.classList.add('hidden');
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment' // Use rear camera if available
+                    }, 
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                startButton.disabled = true;
+                captureButton.disabled = false;
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                errorMessage.textContent = `Error accessing camera: ${err.message || err}`;
+                errorMessage.classList.remove('hidden');
+            }
+        });
+        
+        // Capture photo
+        captureButton.addEventListener('click', () => {
+            // Set canvas dimensions to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw current video frame to canvas
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to image and display
+            const imageDataUrl = canvas.toDataURL('image/png');
+            photo.setAttribute('src', imageDataUrl);
+            photo.classList.remove('hidden');
+            
+            // Stop camera and update UI
+            stopCamera();
+            captureButton.disabled = true;
+            resetButton.classList.remove('hidden');
+        });
+        
+        // Reset for another photo
+        resetButton.addEventListener('click', () => {
+            photo.classList.add('hidden');
+            resetButton.classList.add('hidden');
+            startButton.disabled = false;
+        });
+        
+        // Stop camera function
+        function stopCamera() {
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                stream = null;
+            }
+        }
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+    </script>
+</body>
+</html>
