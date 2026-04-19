@@ -4,22 +4,39 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
 <body>
     <div class="container">
         <h1>Camera App</h1>
         
+        <div class="instructions">
+            <p><strong>Usage Instructions:</strong></p>
+            <ul>
+                <li>Click "Start Camera" to begin</li>
+                <li>Allow camera permissions when prompted</li>
+                <li>Click "Capture Photo" to take a picture</li>
+                <li>Use "Download Photo" to save your image</li>
+            </ul>
+        </div>
+        
+        <div id="statusMessage" class="status hidden"></div>
         <div id="errorMessage" class="error hidden"></div>
         
-        <video id="video" autoplay playsinline></video>
+        <div id="videoContainer">
+            <video id="video" autoplay playsinline muted></video>
+        </div>
+        
         <canvas id="canvas"></canvas>
         
         <div class="controls">
             <button id="startButton">Start Camera</button>
             <button id="captureButton" disabled>Capture Photo</button>
+            <button id="downloadButton" class="hidden">Download Photo</button>
             <button id="resetButton" class="hidden">Take Another</button>
         </div>
         
-        <img id="photo" alt="Captured photo will appear here" class="hidden">
+        <img id="photo" alt="Captured photo will appear here">
     </div>
 
     <script>
@@ -29,21 +46,151 @@
         const photo = document.getElementById('photo');
         const startButton = document.getElementById('startButton');
         const captureButton = document.getElementById('captureButton');
+        const downloadButton = document.getElementById('downloadButton');
         const resetButton = document.getElementById('resetButton');
         const errorMessage = document.getElementById('errorMessage');
+        const statusMessage = document.getElementById('statusMessage');
         
         let stream = null;
         
+        // Show status message
+        function showStatus(message, type = 'loading') {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.classList.remove('hidden');
+        }
+        
+        // Hide status message
+        function hideStatus() {
+            statusMessage.classList.add('hidden');
+        }
+        
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            hideStatus();
+        }
+        
+        // Hide error message
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+        
         // Start camera
         startButton.addEventListener('click', async () => {
+            hideError();
+            showStatus('Accessing camera...');
+            
             try {
-                errorMessage.classList.add('hidden');
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment' // Use rear camera if available
-                    }, 
-                    audio: false 
-                });
+                // Try different constraints for better compatibility
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: "environment" }, // Prefer rear camera
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                };
                 
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Set video source
                 video.srcObject = stream;
-
+                
+                // Update UI
+                hideStatus();
+                showStatus('Camera ready!', 'success');
+                startButton.disabled = true;
+                captureButton.disabled = false;
+                
+                // Hide any previous photo
+                photo.style.display = 'none';
+                downloadButton.classList.add('hidden');
+                resetButton.classList.add('hidden');
+                
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                let errorMsg = 'Error accessing camera: ';
+                
+                if (err.name === 'NotAllowedError') {
+                    errorMsg += 'Permission denied. Please allow camera access.';
+                } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+                    errorMsg += 'No camera found or camera not supported.';
+                } else if (err.name === 'NotReadableError') {
+                    errorMsg += 'Camera is already in use.';
+                } else {
+                    errorMsg += err.message || 'Unknown error occurred.';
+                }
+                
+                showError(errorMsg);
+                hideStatus();
+            }
+        });
+        
+        // Capture photo
+        captureButton.addEventListener('click', () => {
+            if (!stream) return;
+            
+            // Set canvas dimensions to match video
+            canvas.width = video.videoWidth || video.offsetWidth;
+            canvas.height = video.videoHeight || video.offsetHeight;
+            
+            // Draw current video frame to canvas
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to image and display
+            const imageDataUrl = canvas.toDataURL('image/png');
+            photo.src = imageDataUrl;
+            photo.style.display = 'block';
+            
+            // Update UI
+            captureButton.disabled = true;
+            downloadButton.classList.remove('hidden');
+            resetButton.classList.remove('hidden');
+            hideStatus();
+        });
+        
+        // Download photo
+        downloadButton.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'camera-photo.png';
+            link.href = photo.src;
+            link.click();
+        });
+        
+        // Reset for another photo
+        resetButton.addEventListener('click', () => {
+            photo.style.display = 'none';
+            downloadButton.classList.add('hidden');
+            resetButton.classList.add('hidden');
+            captureButton.disabled = false;
+        });
+        
+        // Stop camera function
+        function stopCamera() {
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                stream = null;
+            }
+        }
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+        
+        // Handle video play errors
+        video.addEventListener('error', (e) => {
+            showError('Error playing video stream: ' + e.message);
+        });
+        
+        // Handle video metadata load
+        video.addEventListener('loadedmetadata', () => {
+            console.log('Video metadata loaded');
+        });
+    </script>
+</body>
+</html>
