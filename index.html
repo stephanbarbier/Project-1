@@ -3,22 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera App</title>
+    <title>Camera App with Image Recognition</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>Camera App</h1>
-        
-        <div class="instructions">
-            <p><strong>Usage Instructions:</strong></p>
-            <ul>
-                <li>Click "Start Camera" to begin</li>
-                <li>Allow camera permissions when prompted</li>
-                <li>Click "Capture Photo" to take a picture</li>
-                <li>Use "Download Photo" to save your image</li>
-            </ul>
-        </div>
+        <h1>Camera App with Image Recognition</h1>
         
         <div id="statusMessage" class="status hidden"></div>
         <div id="errorMessage" class="error hidden"></div>
@@ -32,13 +22,15 @@
         <div class="controls">
             <button id="startButton">Start Camera</button>
             <button id="captureButton" disabled>Capture Photo</button>
+            <button id="analyzeButton" class="hidden">Analyze Image</button>
+            <button id="manualAnalyzeButton" class="hidden">Manual Analysis</button>
             <button id="downloadButton" class="hidden">Download Photo</button>
             <button id="resetButton" class="hidden">Take Another</button>
         </div>
         
         <img id="photo" alt="Captured photo will appear here">
-
-        <div class="recognition-container">
+        
+        <div id="recognitionContainer" class="recognition-container hidden">
             <h2>Image Recognition Results</h2>
             <div id="results"></div>
         </div>
@@ -51,13 +43,21 @@
         const photo = document.getElementById('photo');
         const startButton = document.getElementById('startButton');
         const captureButton = document.getElementById('captureButton');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const manualAnalyzeButton = document.getElementById('manualAnalyzeButton');
         const downloadButton = document.getElementById('downloadButton');
         const resetButton = document.getElementById('resetButton');
         const errorMessage = document.getElementById('errorMessage');
         const statusMessage = document.getElementById('statusMessage');
+        const recognitionContainer = document.getElementById('recognitionContainer');
         const resultsContainer = document.getElementById('results');
         
+        // Hugging Face API settings
+        const HF_API_URL = "https://api-inference.huggingface.co/models/google/vit-base-patch16-224";
+        const HF_API_TOKEN = ""; // Add your token here if you have one
+        
         let stream = null;
+        let capturedImageData = null;
         
         // Show status message
         function showStatus(message, type = 'loading') {
@@ -110,10 +110,13 @@
                 startButton.disabled = true;
                 captureButton.disabled = false;
                 
-                // Hide any previous photo
+                // Hide any previous photo and results
                 photo.style.display = 'none';
                 downloadButton.classList.add('hidden');
+                analyzeButton.classList.add('hidden');
+                manualAnalyzeButton.classList.add('hidden');
                 resetButton.classList.add('hidden');
+                recognitionContainer.classList.add('hidden');
                 
             } catch (err) {
                 console.error("Error accessing camera:", err);
@@ -147,19 +150,132 @@
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             
             // Convert to image and display
-            const imageDataUrl = canvas.toDataURL('image/png');
-            photo.src = imageDataUrl;
+            capturedImageData = canvas.toDataURL('image/png');
+            photo.src = capturedImageData;
             photo.style.display = 'block';
             
             // Update UI
             captureButton.disabled = true;
+            analyzeButton.classList.remove('hidden');
+            manualAnalyzeButton.classList.remove('hidden');
             downloadButton.classList.remove('hidden');
             resetButton.classList.remove('hidden');
             hideStatus();
-
-            // Perform image recognition
-            performImageRecognition(imageDataUrl);
         });
+        
+        // Auto-analyze image using Hugging Face API
+        analyzeButton.addEventListener('click', async () => {
+            await analyzeImage();
+        });
+        
+        // Manual analysis button
+        manualAnalyzeButton.addEventListener('click', async () => {
+            await analyzeImage();
+        });
+        
+        // Analyze image using Hugging Face API
+        async function analyzeImage() {
+            if (!capturedImageData) return;
+            
+            // Check if API token is provided
+            if (!HF_API_TOKEN) {
+                showError("Hugging Face API token required. Please add your token to use image recognition.");
+                return;
+            }
+            
+            showStatus('Analyzing image...');
+            analyzeButton.disabled = true;
+            manualAnalyzeButton.disabled = true;
+            
+            try {
+                // Convert data URL to blob
+                const response = await fetch(capturedImageData);
+                const blob = await response.blob();
+                
+                // Call Hugging Face API
+                const apiResponse = await fetch(HF_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${HF_API_TOKEN}`,
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: blob
+                });
+                
+                if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    throw new Error(`API request failed: ${apiResponse.status} - ${errorText}`);
+                }
+                
+                const results = await apiResponse.json();
+                
+                // Display results
+                displayResults(results);
+                hideStatus();
+                
+            } catch (error) {
+                console.error('Error analyzing image:', error);
+                showError(`Image analysis failed: ${error.message}`);
+                analyzeButton.disabled = false;
+                manualAnalyzeButton.disabled = false;
+            }
+        }
+        
+        // Display recognition results
+        function displayResults(results) {
+            // Check if results is an array or object with predictions
+            let predictions = [];
+            
+            if (Array.isArray(results)) {
+                predictions = results;
+            } else if (results && typeof results === 'object') {
+                // Handle different API response formats
+                if (results.predictions) {
+                    predictions = results.predictions;
+                } else if (results[0] && results[0].label) {
+                    predictions = results;
+                } else {
+                    // Try to find predictions in the object
+                    for (const key in results) {
+                        if (Array.isArray(results[key])) {
+                            predictions = results[key];
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (!predictions || predictions.length === 0) {
+                resultsContainer.innerHTML = '<p>No recognizable objects found</p>';
+                recognitionContainer.classList.remove('hidden');
+                return;
+            }
+            
+            // Sort results by confidence if available
+            if (predictions[0].score !== undefined) {
+                predictions.sort((a, b) => b.score - a.score);
+            }
+            
+            // Create HTML for results
+            let html = '<div class="results-list">';
+            predictions.slice(0, 5).forEach(prediction => {
+                const label = prediction.label || prediction.class || 'Unknown';
+                const confidence = prediction.score !== undefined 
+                    ? (prediction.score * 100).toFixed(1)
+                    : 'N/A';
+                    
+                html += `
+                    <div class="prediction-item">
+                        <span class="prediction-label">${label}</span>
+                        <span class="prediction-confidence">${confidence}%</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            resultsContainer.innerHTML = html;
+            recognitionContainer.classList.remove('hidden');
+        }
         
         // Download photo
         downloadButton.addEventListener('click', () => {
@@ -173,9 +289,13 @@
         resetButton.addEventListener('click', () => {
             photo.style.display = 'none';
             downloadButton.classList.add('hidden');
+            analyzeButton.classList.add('hidden');
+            manualAnalyzeButton.classList.add('hidden');
             resetButton.classList.add('hidden');
+            recognitionContainer.classList.add('hidden');
             captureButton.disabled = false;
-            resultsContainer.innerHTML = '';
+            analyzeButton.disabled = false;
+            manualAnalyzeButton.disabled = false;
         });
         
         // Stop camera function
@@ -201,49 +321,6 @@
         video.addEventListener('loadedmetadata', () => {
             console.log('Video metadata loaded');
         });
-
-        // Hugging Face API settings
-const HF_API_URL = "https://therealrp8-swinv2-tiny-patch4-window8-256 demo.hf.space/run/predict";        const HF_API_TOKEN = ""; // Add your token here if you have one
-
-        // Perform image recognition (simulated)
-        function performImageRecognition(imageDataUrl) {
-            // Show loading indicator
-            resultsContainer.innerHTML = '<div class="loading-spinner"></div> Analyzing image...';
-
-            // Simulate API call delay
-            setTimeout(() => {
-                // Mock recognition results
-                const mockResults = [
-                    { label: 'Cat', confidence: '92.3%' },
-                    { label: 'Dog', confidence: '7.2%' },
-                    { label: 'Bird', confidence: '0.5%' }
-                ];
-
-                // Display results
-                displayResults(mockResults);
-            }, 1500);
-        }
-
-        // Display recognition results
-        function displayResults(results) {
-            if (results.length === 0) {
-                resultsContainer.innerHTML = '<p>No objects detected</p>';
-                return;
-            }
-
-            let html = '<div>';
-            results.forEach(result => {
-                html += `
-                    <div class="prediction-item">
-                        <span class="prediction-label">${result.label}</span>
-                        <span class="prediction-confidence">${result.confidence}</span>
-                    </div>
-                `;
-            });
-            html += '</div>';
-
-            resultsContainer.innerHTML = html;
-        }
     </script>
 </body>
 </html>
