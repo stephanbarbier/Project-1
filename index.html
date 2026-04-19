@@ -37,6 +37,11 @@
         </div>
         
         <img id="photo" alt="Captured photo will appear here">
+
+        <div class="recognition-container">
+            <h2>Image Recognition Results</h2>
+            <div id="results"></div>
+        </div>
     </div>
 
     <script>
@@ -50,6 +55,7 @@
         const resetButton = document.getElementById('resetButton');
         const errorMessage = document.getElementById('errorMessage');
         const statusMessage = document.getElementById('statusMessage');
+        const resultsContainer = document.getElementById('results');
         
         let stream = null;
         
@@ -150,6 +156,9 @@
             downloadButton.classList.remove('hidden');
             resetButton.classList.remove('hidden');
             hideStatus();
+
+            // Perform image recognition
+            performImageRecognition(imageDataUrl);
         });
         
         // Download photo
@@ -166,6 +175,7 @@
             downloadButton.classList.add('hidden');
             resetButton.classList.add('hidden');
             captureButton.disabled = false;
+            resultsContainer.innerHTML = '';
         });
         
         // Stop camera function
@@ -191,6 +201,46 @@
         video.addEventListener('loadedmetadata', () => {
             console.log('Video metadata loaded');
         });
+
+        // Perform image recognition (simulated)
+        function performImageRecognition(imageDataUrl) {
+            // Show loading indicator
+            resultsContainer.innerHTML = '<div class="loading-spinner"></div> Analyzing image...';
+
+            // Simulate API call delay
+            setTimeout(() => {
+                // Mock recognition results
+                const mockResults = [
+                    { label: 'Cat', confidence: '92.3%' },
+                    { label: 'Dog', confidence: '7.2%' },
+                    { label: 'Bird', confidence: '0.5%' }
+                ];
+
+                // Display results
+                displayResults(mockResults);
+            }, 1500);
+        }
+
+        // Display recognition results
+        function displayResults(results) {
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<p>No objects detected</p>';
+                return;
+            }
+
+            let html = '<div>';
+            results.forEach(result => {
+                html += `
+                    <div class="prediction-item">
+                        <span class="prediction-label">${result.label}</span>
+                        <span class="prediction-confidence">${result.confidence}</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            resultsContainer.innerHTML = html;
+        }
     </script>
 </body>
 </html>
